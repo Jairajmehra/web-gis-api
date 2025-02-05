@@ -3,76 +3,24 @@ import os
 import sys
 import json
 import subprocess
-import tempfile
 from osgeo import gdal, osr
-from flask import Flask, request, jsonify, Response
-from flask_cors import CORS
+from flask import Flask, request, jsonify, Response, send_from_directory
 import uuid
 import base64
-from google.cloud import storage
-from google.oauth2 import service_account
-import io
 import datetime
+from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# GCS Configuration
-BUCKET_NAME = os.getenv('BUCKET_NAME', 'web-gis-2198')
-
-# Initialize GCS client
-def get_storage_client():
-    """Get storage client based on environment"""
-    try:
-        # First try default credentials (this works in Cloud Run)
-        print("Attempting to use default credentials...")
-        return storage.Client()
-    except Exception as e:
-        print(f"Error using default credentials: {str(e)}")
-        
-        # If we're in Cloud Run, we should use the default service account
-        if os.getenv('K_SERVICE'):
-            print("Running in Cloud Run, retrying with default service account...")
-            try:
-                return storage.Client()
-            except Exception as e2:
-                print(f"Failed to use Cloud Run default service account: {str(e2)}")
-                raise
-        
-        # For local development, try service account key file
-        credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'key.json')
-        if os.path.exists(credentials_path):
-            print(f"Using service account key from: {credentials_path}")
-            credentials = service_account.Credentials.from_service_account_file(credentials_path)
-            return storage.Client(credentials=credentials)
-        else:
-            print(f"Warning: Service account key not found at {credentials_path}")
-            print("No valid authentication method found.")
-            raise Exception("Failed to authenticate with Google Cloud Storage. Ensure proper credentials are configured.")
-
-storage_client = get_storage_client()
-bucket = storage_client.bucket(BUCKET_NAME)
+# Create tiles directory if it doesn't exist
+TILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tiles')
+os.makedirs(TILES_DIR, exist_ok=True)
 
 # Create a transparent PNG for missing tiles
 TRANSPARENT_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAQAAAC1+jfqAAAAGElEQVRIx2NgoBvoKGKAgP///4Y8AwMDAwMDAwMAAAD/7+bw12hhOwAAAABJRU5ErkJggg=="
 )
-
-def upload_to_gcs(local_path, gcs_path):
-    """Upload a file to Google Cloud Storage."""
-    blob = bucket.blob(gcs_path)
-    blob.upload_from_filename(local_path)
-    print(f"Uploaded {local_path} to gs://{BUCKET_NAME}/{gcs_path}")
-
-def upload_directory_to_gcs(local_dir, folder_id):
-    """Upload an entire directory to Google Cloud Storage under a unique folder."""
-    for root, dirs, files in os.walk(local_dir):
-        for file in files:
-            local_path = os.path.join(root, file)
-            # Create GCS path directly under the bucket with folder_id
-            relative_path = os.path.relpath(local_path, local_dir)
-            gcs_path = os.path.join(folder_id, relative_path)
-            upload_to_gcs(local_path, gcs_path)
 
 def create_vrt_with_gcps(image_path, points_data, vrt_path):
     """
@@ -155,34 +103,28 @@ def generate_tiles_endpoint():
             
         points_data = json.loads(request.form['points'])
         
-        # Create a unique ID and temporary directory
+        # Create a unique ID
         unique_id = str(uuid.uuid4())
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Save the uploaded image temporarily
-            temp_image_path = os.path.join(temp_dir, 'source_image' + os.path.splitext(image_file.filename)[1])
-            image_file.save(temp_image_path)
+        folder_path = os.path.join(TILES_DIR, unique_id)
+        os.makedirs(folder_path, exist_ok=True)
 
-            # Create intermediate filenames in temp directory
-            vrt_path = os.path.join(temp_dir, "temp.vrt")
-            warped_path = os.path.join(temp_dir, "warped.tif")
-            tiles_output_dir = os.path.join(temp_dir, "tiles")
+        # Save the uploaded image
+        image_path = os.path.join(folder_path, 'source_image' + os.path.splitext(image_file.filename)[1])
+        image_file.save(image_path)
 
-            # Step 1: Create the VRT file with GCPs
-            create_vrt_with_gcps(temp_image_path, points_data, vrt_path)
+        # Create paths for intermediate files
+        vrt_path = os.path.join(folder_path, "temp.vrt")
+        warped_path = os.path.join(folder_path, "warped.tif")
+        tiles_output_dir = os.path.join(folder_path, "tiles")
 
-            # Step 2: Warp (reproject) the VRT to a georeferenced raster
-            warp_image(vrt_path, warped_path)
+        # Step 1: Create the VRT file with GCPs
+        create_vrt_with_gcps(image_path, points_data, vrt_path)
 
-            # Step 3: Generate XYZ tiles from the warped image
-            generate_tiles(warped_path, tiles_output_dir)
+        # Step 2: Warp (reproject) the VRT to a georeferenced raster
+        warp_image(vrt_path, warped_path)
 
-            # Step 4: Upload all generated files to GCS directly under the unique folder
-            upload_directory_to_gcs(tiles_output_dir, unique_id)
-            
-            # Also upload the source image and intermediate files for reference
-            upload_to_gcs(temp_image_path, f'{unique_id}/source_image{os.path.splitext(image_file.filename)[1]}')
-            upload_to_gcs(vrt_path, f'{unique_id}/temp.vrt')
-            upload_to_gcs(warped_path, f'{unique_id}/warped.tif')
+        # Step 3: Generate XYZ tiles from the warped image
+        generate_tiles(warped_path, tiles_output_dir)
 
         return jsonify({
             'status': 'success',
@@ -195,7 +137,7 @@ def generate_tiles_endpoint():
 @app.route('/<folder_id>/tiles/<z>/<x>/<y>.png')
 def get_xyz_tile(folder_id, z, x, y):
     """
-    Serve a tile from Google Cloud Storage
+    Serve a tile from local filesystem
     Convert from XYZ coordinates to TMS coordinates (flip y axis)
     """
     try:
@@ -203,23 +145,19 @@ def get_xyz_tile(folder_id, z, x, y):
         zoom = int(z)
         tms_y = (2**zoom - 1) - int(y)  # Flip Y coordinate
         
-        # Construct GCS path directly with folder_id
-        gcs_path = f'{folder_id}/tiles/{z}/{x}/{tms_y}.png'
+        # Construct local filesystem path
+        tile_path = os.path.join('tiles', folder_id, 'tiles', z, x, f'{tms_y}.png')
         
         print(f"🗺️ XYZ request: z={z}, x={x}, y={y}")
         print(f"🔄 Converting to TMS: z={z}, x={x}, y={tms_y}")
-        print(f"🔍 Looking for: gs://{BUCKET_NAME}/{gcs_path}")
+        print(f"🔍 Looking for: {tile_path}")
         
-        # Try to get the blob
-        blob = bucket.blob(gcs_path)
-        
-        if blob.exists():
-            # Download the tile to memory and serve it
-            content = blob.download_as_bytes()
-            return Response(
-                response=content,
-                mimetype='image/png',
-                headers={'Access-Control-Allow-Origin': '*'}
+        # Check if tile exists
+        if os.path.exists(tile_path):
+            return send_from_directory(
+                os.path.dirname(os.path.abspath(__file__)),
+                tile_path,
+                mimetype='image/png'
             )
         else:
             return Response(
@@ -236,44 +174,10 @@ def get_xyz_tile(folder_id, z, x, y):
             headers={'Access-Control-Allow-Origin': '*'}
         )
 
-@app.route('/health')
-def health_check():
-    """
-    Health check endpoint that verifies:
-    1. API is running
-    2. GCS connectivity
-    """
-    try:
-        # Basic health check without GCS check first
-        basic_health = {
-            'status': 'healthy',
-            'service': 'web-gis-api',
-            'timestamp': str(datetime.datetime.now())
-        }
-
-        # Try GCS connectivity but don't fail the health check if it fails
-        try:
-            # Quick check - just verify bucket exists
-            bucket.exists()
-            basic_health['gcs_status'] = 'connected'
-            basic_health['gcs_bucket'] = BUCKET_NAME
-        except Exception as gcs_error:
-            basic_health['gcs_status'] = 'error'
-            basic_health['gcs_error'] = str(gcs_error)
-        
-        return jsonify(basic_health)
-        
-    except Exception as e:
-        return jsonify({
-            'status': 'unhealthy',
-            'error': str(e),
-            'timestamp': str(datetime.datetime.now())
-        }), 500
-
 @app.route('/check_folder_id')
 def check_folder_exists():
     """
-    Check if a folder exists in the GCS bucket.
+    Check if a folder exists in the local tiles directory.
     Takes folder_id as a URL parameter.
     Returns true if folder exists, false otherwise.
     """
@@ -286,12 +190,9 @@ def check_folder_exists():
                 'exists': False
             }), 400
         
-        # List blobs with prefix to check if folder exists
-        # Adding trailing slash to ensure we match the folder
-        blobs = bucket.list_blobs(prefix=f"{folder_id}/", max_results=1)
-        
-        # Try to get the first blob
-        exists = next(blobs, None) is not None
+        # Check if folder exists in tiles directory
+        folder_path = os.path.join(TILES_DIR, folder_id)
+        exists = os.path.exists(folder_path)
         
         return jsonify({
             'folder_id': folder_id,
@@ -306,7 +207,7 @@ def check_folder_exists():
 
 @app.route('/live')
 def liveness_probe():
-    """Simple liveness probe that doesn't require GCS access"""
+    """Simple liveness probe"""
     return jsonify({
         'status': 'live',
         'service': 'web-gis-api',
@@ -317,4 +218,4 @@ if __name__ == "__main__":
     # This is used when running locally only. When deploying to Google App
     # Engine, a webserver process such as Gunicorn will serve the app. This
     # can be configured by adding an `entrypoint` to app.yaml.
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8082)), debug=False)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8091)), debug=False)
