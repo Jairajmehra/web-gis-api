@@ -5,7 +5,7 @@ import json
 import subprocess
 import tempfile
 from osgeo import gdal, osr
-from flask import Flask, request, jsonify, send_file, Response
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import uuid
 import base64
@@ -23,17 +23,32 @@ BUCKET_NAME = os.getenv('BUCKET_NAME', 'web-gis-2198')
 # Initialize GCS client
 def get_storage_client():
     """Get storage client based on environment"""
-    if os.getenv('GAE_ENV', '').startswith('standard'):
-        # Running on App Engine, use default credentials
+    try:
+        # First try default credentials (this works in Cloud Run)
+        print("Attempting to use default credentials...")
         return storage.Client()
-    else:
-        # Local development, use service account key
+    except Exception as e:
+        print(f"Error using default credentials: {str(e)}")
+        
+        # If we're in Cloud Run, we should use the default service account
+        if os.getenv('K_SERVICE'):
+            print("Running in Cloud Run, retrying with default service account...")
+            try:
+                return storage.Client()
+            except Exception as e2:
+                print(f"Failed to use Cloud Run default service account: {str(e2)}")
+                raise
+        
+        # For local development, try service account key file
         credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', 'key.json')
         if os.path.exists(credentials_path):
+            print(f"Using service account key from: {credentials_path}")
             credentials = service_account.Credentials.from_service_account_file(credentials_path)
             return storage.Client(credentials=credentials)
         else:
-            raise Exception(f"Service account key not found at {credentials_path}")
+            print(f"Warning: Service account key not found at {credentials_path}")
+            print("No valid authentication method found.")
+            raise Exception("Failed to authenticate with Google Cloud Storage. Ensure proper credentials are configured.")
 
 storage_client = get_storage_client()
 bucket = storage_client.bucket(BUCKET_NAME)
@@ -229,14 +244,25 @@ def health_check():
     2. GCS connectivity
     """
     try:
-        # Check GCS connectivity by listing a single blob
-        next(bucket.list_blobs(max_results=1), None)
-        
-        return jsonify({
+        # Basic health check without GCS check first
+        basic_health = {
             'status': 'healthy',
-            'gcs_bucket': BUCKET_NAME,
+            'service': 'web-gis-api',
             'timestamp': str(datetime.datetime.now())
-        })
+        }
+
+        # Try GCS connectivity but don't fail the health check if it fails
+        try:
+            # Quick check - just verify bucket exists
+            bucket.exists()
+            basic_health['gcs_status'] = 'connected'
+            basic_health['gcs_bucket'] = BUCKET_NAME
+        except Exception as gcs_error:
+            basic_health['gcs_status'] = 'error'
+            basic_health['gcs_error'] = str(gcs_error)
+        
+        return jsonify(basic_health)
+        
     except Exception as e:
         return jsonify({
             'status': 'unhealthy',
@@ -244,8 +270,51 @@ def health_check():
             'timestamp': str(datetime.datetime.now())
         }), 500
 
+@app.route('/check_folder_id')
+def check_folder_exists():
+    """
+    Check if a folder exists in the GCS bucket.
+    Takes folder_id as a URL parameter.
+    Returns true if folder exists, false otherwise.
+    """
+    try:
+        # Get folder_id from URL parameters
+        folder_id = request.args.get('folder_id')
+        if not folder_id:
+            return jsonify({
+                'error': 'No folder_id provided',
+                'exists': False
+            }), 400
+        
+        # List blobs with prefix to check if folder exists
+        # Adding trailing slash to ensure we match the folder
+        blobs = bucket.list_blobs(prefix=f"{folder_id}/", max_results=1)
+        
+        # Try to get the first blob
+        exists = next(blobs, None) is not None
+        
+        return jsonify({
+            'folder_id': folder_id,
+            'exists': exists
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': str(e),
+            'exists': False
+        }), 500
+
+@app.route('/live')
+def liveness_probe():
+    """Simple liveness probe that doesn't require GCS access"""
+    return jsonify({
+        'status': 'live',
+        'service': 'web-gis-api',
+        'timestamp': str(datetime.datetime.now())
+    })
+
 if __name__ == "__main__":
     # This is used when running locally only. When deploying to Google App
     # Engine, a webserver process such as Gunicorn will serve the app. This
     # can be configured by adding an `entrypoint` to app.yaml.
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)), debug=False)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8082)), debug=False)

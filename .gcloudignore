@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
+
+# Virtual Environment
+venv/
+ENV/
+web-gis-env/
+
+# Development/Local files
+.git
+.gitignore
+.env
+.env.local
+*.log
+credentials/
+key.json
+service-account-key.json
+tile_output/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local testing
+test/
+tests/ 

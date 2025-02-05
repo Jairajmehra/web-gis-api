@@ -35,6 +35,7 @@ credentials/
 .env
 .env.local
 *.log
+tile_output/
 
 # Local development
 .vscode/
