@@ -1,0 +1,56 @@
+<VRTDataset rasterXSize="512" rasterYSize="512">
+  <Metadata>
+    <MDI key="Software">www.inkscape.org</MDI>
+  </Metadata>
+  <Metadata domain="IMAGE_STRUCTURE">
+    <MDI key="INTERLEAVE">PIXEL</MDI>
+  </Metadata>
+  <GCPList Projection="GEOGCS[&quot;WGS 84&quot;,DATUM[&quot;WGS_1984&quot;,SPHEROID[&quot;WGS 84&quot;,6378137,298.257223563,AUTHORITY[&quot;EPSG&quot;,&quot;7030&quot;]],AUTHORITY[&quot;EPSG&quot;,&quot;6326&quot;]],PRIMEM[&quot;Greenwich&quot;,0,AUTHORITY[&quot;EPSG&quot;,&quot;8901&quot;]],UNIT[&quot;degree&quot;,0.0174532925199433,AUTHORITY[&quot;EPSG&quot;,&quot;9122&quot;]],AXIS[&quot;Latitude&quot;,NORTH],AXIS[&quot;Longitude&quot;,EAST],AUTHORITY[&quot;EPSG&quot;,&quot;4326&quot;]]" dataAxisToSRSAxisMapping="2,1">
+    <GCP Id="" Pixel="53.8125" Line="33.0000" X="7.237489063873E+01" Y="2.331981137382E+01" />
+    <GCP Id="" Pixel="261.8125" Line="13.0000" X="7.263444264069E+01" Y="2.334124845087E+01" />
+    <GCP Id="" Pixel="452.8125" Line="31.0000" X="7.282670338287E+01" Y="2.335889991605E+01" />
+    <GCP Id="" Pixel="37.8125" Line="462.0000" X="7.238725025787E+01" Y="2.293082552200E+01" />
+    <GCP Id="" Pixel="248.8125" Line="489.0000" X="7.261796314850E+01" Y="2.295864755788E+01" />
+    <GCP Id="" Pixel="468.8125" Line="469.0000" X="7.286515553131E+01" Y="2.299152076823E+01" />
+  </GCPList>
+  <VRTRasterBand dataType="Byte" band="1" blockXSize="512" blockYSize="1">
+    <ColorInterp>Red</ColorInterp>
+    <SimpleSource>
+      <SourceFilename relativeToVRT="1">source_image.png</SourceFilename>
+      <SourceBand>1</SourceBand>
+      <SourceProperties RasterXSize="512" RasterYSize="512" DataType="Byte" BlockXSize="512" BlockYSize="1" />
+      <SrcRect xOff="0" yOff="0" xSize="512" ySize="512" />
+      <DstRect xOff="0" yOff="0" xSize="512" ySize="512" />
+    </SimpleSource>
+  </VRTRasterBand>
+  <VRTRasterBand dataType="Byte" band="2" blockXSize="512" blockYSize="1">
+    <ColorInterp>Green</ColorInterp>
+    <SimpleSource>
+      <SourceFilename relativeToVRT="1">source_image.png</SourceFilename>
+      <SourceBand>2</SourceBand>
+      <SourceProperties RasterXSize="512" RasterYSize="512" DataType="Byte" BlockXSize="512" BlockYSize="1" />
+      <SrcRect xOff="0" yOff="0" xSize="512" ySize="512" />
+      <DstRect xOff="0" yOff="0" xSize="512" ySize="512" />
+    </SimpleSource>
+  </VRTRasterBand>
+  <VRTRasterBand dataType="Byte" band="3" blockXSize="512" blockYSize="1">
+    <ColorInterp>Blue</ColorInterp>
+    <SimpleSource>
+      <SourceFilename relativeToVRT="1">source_image.png</SourceFilename>
+      <SourceBand>3</SourceBand>
+      <SourceProperties RasterXSize="512" RasterYSize="512" DataType="Byte" BlockXSize="512" BlockYSize="1" />
+      <SrcRect xOff="0" yOff="0" xSize="512" ySize="512" />
+      <DstRect xOff="0" yOff="0" xSize="512" ySize="512" />
+    </SimpleSource>
+  </VRTRasterBand>
+  <VRTRasterBand dataType="Byte" band="4" blockXSize="512" blockYSize="1">
+    <ColorInterp>Alpha</ColorInterp>
+    <SimpleSource>
+      <SourceFilename relativeToVRT="1">source_image.png</SourceFilename>
+      <SourceBand>4</SourceBand>
+      <SourceProperties RasterXSize="512" RasterYSize="512" DataType="Byte" BlockXSize="512" BlockYSize="1" />
+      <SrcRect xOff="0" yOff="0" xSize="512" ySize="512" />
+      <DstRect xOff="0" yOff="0" xSize="512" ySize="512" />
+    </SimpleSource>
+  </VRTRasterBand>
+</VRTDataset>
