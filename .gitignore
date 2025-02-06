@@ -40,3 +40,6 @@ tile_output/
 # Local development
 .vscode/
 .idea/ 
+
+# Tiles directory
+tiles/
