@@ -87,6 +87,20 @@ def generate_tiles(warped_path, output_tiles_dir):
     subprocess.check_call(tiles_cmd)
     print("Tiles generated in:", output_tiles_dir)
 
+def convert_to_rgba(input_path, output_path):
+    """Convert image to RGBA format"""
+    cmd = [
+        "gdal_translate",
+        "-of", "GTiff",
+        "-expand", "rgba",
+        input_path,
+        output_path
+    ]
+    print("Converting to RGBA:")
+    print(" ".join(cmd))
+    subprocess.check_call(cmd)
+    print("RGBA image created at:", output_path)
+
 @app.route('/generate_xyz_tiles', methods=['POST'])
 def generate_tiles_endpoint():
     try:
@@ -115,6 +129,7 @@ def generate_tiles_endpoint():
         # Create paths for intermediate files
         vrt_path = os.path.join(folder_path, "temp.vrt")
         warped_path = os.path.join(folder_path, "warped.tif")
+        rgba_path = os.path.join(folder_path, "rgba.tif")  # New RGBA file
         tiles_output_dir = os.path.join(folder_path, "tiles")
 
         # Step 1: Create the VRT file with GCPs
@@ -123,8 +138,11 @@ def generate_tiles_endpoint():
         # Step 2: Warp (reproject) the VRT to a georeferenced raster
         warp_image(vrt_path, warped_path)
 
-        # Step 3: Generate XYZ tiles from the warped image
-        generate_tiles(warped_path, tiles_output_dir)
+        # Step 3: Convert to RGBA
+        convert_to_rgba(warped_path, rgba_path)
+
+        # Step 4: Generate XYZ tiles from the RGBA image
+        generate_tiles(rgba_path, tiles_output_dir)
 
         return jsonify({
             'status': 'success',
@@ -215,4 +233,4 @@ def liveness_probe():
     })
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)), debug=False)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8081)), debug=False)
