@@ -88,18 +88,93 @@ def generate_tiles(warped_path, output_tiles_dir):
     print("Tiles generated in:", output_tiles_dir)
 
 def convert_to_rgba(input_path, output_path):
-    """Convert image to RGBA format"""
-    cmd = [
-        "gdal_translate",
-        "-of", "GTiff",
-        "-expand", "rgba",
-        input_path,
-        output_path
-    ]
-    print("Converting to RGBA:")
-    print(" ".join(cmd))
-    subprocess.check_call(cmd)
-    print("RGBA image created at:", output_path)
+    """
+    Convert an input image to an RGBA GeoTIFF in a robust way.
+    
+    For single-band images:
+      - If a color table is present (indexed/paletted image), expand to RGBA.
+      - Otherwise (grayscale), expand to RGB.
+    
+    For multi-band images:
+      - If there are exactly 3 bands, add an alpha channel.
+      - If there are 4 or more bands, assume the image is already RGBA (or similar) and simply copy it.
+    """
+    try:
+        # Open the input dataset
+        ds = gdal.Open(input_path)
+        if ds is None:
+            raise Exception("Unable to open input file: " + input_path)
+        band_count = ds.RasterCount
+
+        # For a single-band image, decide based on the presence of a color table
+        if band_count == 1:
+            band = ds.GetRasterBand(1)
+            if band.GetRasterColorTable() is not None:
+                # Indexed image: use -expand rgba to convert from the palette
+                vrt_temp = output_path + '.vrt'
+                cmd1 = [
+                    "gdal_translate",
+                    "-of", "VRT",
+                    "-expand", "rgba",
+                    input_path,
+                    vrt_temp
+                ]
+                print("Converting indexed image to VRT with RGBA:", " ".join(cmd1))
+                subprocess.check_call(cmd1)
+
+                cmd2 = [
+                    "gdal_translate",
+                    "-of", "GTiff",
+                    "-co", "ALPHA=YES",
+                    vrt_temp,
+                    output_path
+                ]
+                print("Converting VRT to GTiff:", " ".join(cmd2))
+                subprocess.check_call(cmd2)
+                os.remove(vrt_temp)
+            else:
+                # Grayscale image: expand to RGB (three bands)
+                cmd = [
+                    "gdal_translate",
+                    "-of", "GTiff",
+                    "-expand", "rgb",
+                    input_path,
+                    output_path
+                ]
+                print("Converting grayscale image to RGB:", " ".join(cmd))
+                subprocess.check_call(cmd)
+
+        elif band_count == 3:
+            # For 3-band images, add an alpha channel using GDAL's ALPHA creation option
+            cmd = [
+                "gdal_translate",
+                "-of", "GTiff",
+                "-co", "ALPHA=YES",
+                input_path,
+                output_path
+            ]
+            print("Adding alpha channel to 3-band image:", " ".join(cmd))
+            subprocess.check_call(cmd)
+
+        elif band_count >= 4:
+            # For images that already have 4 or more bands, assume they are RGBA (or similar)
+            # Simply copy the file to the output (or add the ALPHA creation option if needed)
+            cmd = [
+                "gdal_translate",
+                "-of", "GTiff",
+                input_path,
+                output_path
+            ]
+            print("Copying multi-band image:", " ".join(cmd))
+            subprocess.check_call(cmd)
+        else:
+            raise Exception("Unexpected number of bands: " + str(band_count))
+
+        print("RGBA conversion complete at:", output_path)
+    except Exception as e:
+        print(f"Error during conversion: {str(e)}")
+        raise
+
 
 @app.route('/generate_xyz_tiles', methods=['POST'])
 def generate_tiles_endpoint():
@@ -233,4 +308,4 @@ def liveness_probe():
     })
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8081)), debug=False)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8085)), debug=False)
