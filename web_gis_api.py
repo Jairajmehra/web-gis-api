@@ -11,8 +11,8 @@ import datetime
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
-
+#CORS(app)  # Enable CORS for all routes
+cors = CORS(app, resources={r"/*": {"origins": "*"}})
 # Create tiles directory if it doesn't exist
 TILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tiles')
 os.makedirs(TILES_DIR, exist_ok=True)
